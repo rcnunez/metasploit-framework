@@ -88,6 +88,7 @@ class Console::CommandDispatcher::Stdapi::Sys
       "getpid"      => "Get the current process identifier",
       "getprivs"    => "Attempt to enable all privileges available to the current process",
       "getuid"      => "Get the user that the server is running as",
+      "getsid"      => "Get the SID of the user that the server is running as",
       "getenv"      => "Get one or more environment variable values",
       "kill"        => "Terminate a process",
       "ps"          => "List running processes",
@@ -107,6 +108,7 @@ class Console::CommandDispatcher::Stdapi::Sys
       "getpid"      => [ "stdapi_sys_process_getpid"  ],
       "getprivs"    => [ "stdapi_sys_config_getprivs" ],
       "getuid"      => [ "stdapi_sys_config_getuid" ],
+      "getsid"      => [ "stdapi_sys_config_getsid" ],
       "getenv"      => [ "stdapi_sys_config_getenv" ],
       "kill"        => [ "stdapi_sys_process_kill" ],
       "ps"          => [ "stdapi_sys_process_get_processes" ],
@@ -279,8 +281,18 @@ class Console::CommandDispatcher::Stdapi::Sys
     print_line("Server username: #{client.sys.config.getuid}")
   end
 
+  #
+  # Display the SID of the user that the server is running as.
+  #
+  def cmd_getsid(*args)
+    print_line("Server SID: #{client.sys.config.getsid}")
+  end
+
+  #
+  # Get the value of one or more environment variables from the target.
+  #
   def cmd_getenv(*args)
-    vars = client.sys.config.getenv(args)
+    vars = client.sys.config.getenvs(*args)
 
     if vars.length == 0
       print_error("None of the specified environment variables were found/set.")
@@ -329,13 +341,20 @@ class Console::CommandDispatcher::Stdapi::Sys
       return true
     end
 
-    # validate all the proposed pids first so we can bail if one is bogus
-    valid_pids = validate_pids(args)
-    args.uniq!
-    diff = args - valid_pids.map {|e| e.to_s}
-    if not diff.empty? # then we had an invalid pid
-      print_error("The following pids are not valid:  #{diff.join(", ").to_s}.  Quitting")
-      return false
+    self_destruct = args.include?("-s")
+
+    if self_destruct
+      valid_pids = [client.sys.process.getpid.to_i]
+    else
+      valid_pids = validate_pids(args)
+
+      # validate all the proposed pids first so we can bail if one is bogus
+      args.uniq!
+      diff = args - valid_pids.map {|e| e.to_s}
+      if not diff.empty? # then we had an invalid pid
+        print_error("The following pids are not valid:  #{diff.join(", ").to_s}.  Quitting")
+        return false
+      end
     end
 
     # kill kill kill
@@ -348,8 +367,9 @@ class Console::CommandDispatcher::Stdapi::Sys
   # help for the kill command
   #
   def cmd_kill_help
-    print_line("Usage: kill pid1 pid2 pid3 ...")
+    print_line("Usage: kill [pid1 [pid2 [pid3 ...]]] [-s]")
     print_line("Terminate one or more processes.")
+    print_line(" -s : Kills the pid associated with the current session.")
   end
 
   #
